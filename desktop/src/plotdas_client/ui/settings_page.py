@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QThreadPool, Signal
+from PySide6.QtCore import Qt, QThreadPool, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -114,10 +115,21 @@ class SettingsPage(QWidget):
         behavior_form.addRow("队列显示", self.show_transfer_queue)
         behavior_form.addRow("当前项目", self.active_project)
         behavior_form.addRow("图片数据源", self.data_source)
-        metadata_row = QHBoxLayout()
-        for checkbox in self.metadata_sections.values():
-            metadata_row.addWidget(checkbox)
-        behavior_form.addRow("详情展示内容", metadata_row)
+        metadata_options = QWidget()
+        metadata_options.setObjectName("metadataOptions")
+        metadata_grid = QGridLayout(metadata_options)
+        metadata_grid.setContentsMargins(0, 0, 0, 0)
+        metadata_grid.setHorizontalSpacing(16)
+        metadata_grid.setVerticalSpacing(4)
+        for index, checkbox in enumerate(self.metadata_sections.values()):
+            metadata_grid.addWidget(
+                checkbox,
+                index // 3,
+                index % 3,
+                alignment=Qt.AlignmentFlag.AlignLeft,
+            )
+        metadata_grid.setColumnStretch(3, 1)
+        behavior_form.addRow("详情展示内容", metadata_options)
         behavior_group = QGroupBox("传输与图片浏览")
         behavior_group.setLayout(behavior_form)
 

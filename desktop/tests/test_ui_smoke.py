@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from PySide6.QtWidgets import QWidget
+
 from plotdas_client.services import TransferEvent
 from plotdas_client.transport import TransferProgress
 from plotdas_client.ui.main_window import MainWindow
@@ -41,6 +43,10 @@ def test_main_window_starts(qtbot, tmp_path: Path):
     assert window.settings_store.load().prefetch_count == 2
     assert window.image_page.previous_shortcut.key().toString() == "Left"
     assert window.image_page.next_shortcut.key().toString() == "Right"
+    metadata_options = window.settings_page.findChild(QWidget, "metadataOptions")
+    metadata_layout = metadata_options.layout()
+    assert metadata_layout.count() == 5
+    assert {metadata_layout.getItemPosition(index)[0] for index in range(5)} == {0, 1}
     window.image_page.images.blockSignals(True)
     window.image_page.images.addItems([str(index) for index in range(5)])
     window.image_page.images.setCurrentRow(2)
