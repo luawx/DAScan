@@ -1,0 +1,21 @@
+input_root: /cluster/datapool4/liaoxl/xinjing_group/das_h5
+output_root: /cluster/datapool2/xuxy/1.Code/PlotDas/output
+jobs_root: /cluster/datapool2/xuxy/1.Code/PlotDas/jobs
+project: xinjing
+timezone: Asia/Shanghai
+plot:
+  dpi: 200
+  format: png
+  figsize: [14.0, 8.0]
+  max_time_pixels: 6000
+filter:
+  type: none
+  order: 4
+scale:
+  mode: percentile
+  percentile: 99.0
+reader:
+  gap_tolerance_samples: 0.5
+  channel_block_size: 64
+  memory_limit_mb: 8192
+  temp_root: /tmp

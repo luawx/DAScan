@@ -1,0 +1,6 @@
+projects:
+- name: xinjing
+  server_input: /cluster/datapool4/liaoxl/xinjing_group/das_h5
+  server_output: /cluster/datapool2/xuxy/1.Code/PlotDas/output/xinjing
+  plugin: xinjing
+  description: 新井 DAS 数据

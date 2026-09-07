@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+.venv/
+build/
+dist/
+*.egg-info/
+cache/
+logs/
+data/*.json
+config/settings.json
+jobs/job_*/
+output/*
+!output/.gitkeep
+.DS_Store

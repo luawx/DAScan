@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dascan-server"
+version = "0.1.0"
+description = "DAScan server-side batch plotting for DAS HDF5 data"
+requires-python = ">=3.10"
+dependencies = [
+  "click>=8",
+  "h5py>=3.7",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "PyYAML>=6",
+  "scipy>=1.11",
+  "psutil>=5.9",
+]
+
+[project.scripts]
+plotdas = "plotdas.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["plotdas*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

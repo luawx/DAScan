@@ -1,0 +1,220 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+
+from PySide6.QtCore import QThreadPool, Signal
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
+
+from plotdas_client.config import AppSettings, SettingsStore
+from plotdas_client.models import Project
+from plotdas_client.services import AnnotationService, ConnectionReport
+
+from .error_dialog import show_error
+from .worker import Worker
+
+
+class SettingsPage(QWidget):
+    connection_changed = Signal(bool)
+    settings_saved = Signal(object)
+
+    def __init__(
+        self,
+        store: SettingsStore,
+        connection_test: Callable[[AppSettings, str], ConnectionReport],
+        projects: list[Project],
+        annotations: AnnotationService,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.store = store
+        self.connection_test = connection_test
+        self.projects = {project.name: project for project in projects}
+        self.annotations = annotations
+        self.pool = QThreadPool.globalInstance()
+        settings = store.load()
+
+        title = QLabel("设置")
+        title.setObjectName("pageTitle")
+        self.host = QLineEdit(settings.server_host)
+        self.port = QSpinBox()
+        self.port.setRange(1, 65535)
+        self.port.setValue(settings.ssh_port)
+        self.username = QLineEdit(settings.username)
+        self.project_path = QLineEdit(settings.project_path)
+        self.cli_command = QLineEdit(settings.cli_command)
+        self.key_path = QLineEdit(settings.private_key_path)
+        self.key_path.setPlaceholderText("留空时使用 SSH Agent / 默认密钥")
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password.setPlaceholderText("仅保存在内存中，不写入配置或日志")
+        self.connect_timeout = QSpinBox()
+        self.connect_timeout.setRange(3, 120)
+        self.connect_timeout.setValue(settings.connect_timeout)
+        self.connect_timeout.setSuffix(" 秒")
+        self.keepalive_interval = QSpinBox()
+        self.keepalive_interval.setRange(0, 600)
+        self.keepalive_interval.setValue(settings.keepalive_interval)
+        self.keepalive_interval.setSuffix(" 秒")
+        self.keepalive_interval.setSpecialValueText("关闭")
+        self.reconnect_attempts = QSpinBox()
+        self.reconnect_attempts.setRange(0, 10)
+        self.reconnect_attempts.setValue(settings.reconnect_attempts)
+        self.max_background_transfers = QSpinBox()
+        self.max_background_transfers.setRange(1, 8)
+        self.max_background_transfers.setValue(settings.max_background_transfers)
+        self.prefetch_count = QSpinBox()
+        self.prefetch_count.setRange(0, 20)
+        self.prefetch_count.setValue(settings.prefetch_count)
+        self.prefetch_count.setSuffix(" 张")
+        self.show_transfer_queue = QCheckBox("进入图片页时显示传输队列")
+        self.show_transfer_queue.setChecked(settings.show_transfer_queue)
+        self.active_project = QComboBox()
+        self.active_project.addItems(self.projects)
+        self.active_project.setCurrentText(settings.active_project)
+        self.data_source = QLineEdit(settings.data_source)
+        self.data_source.setPlaceholderText("服务器图片输出目录，例如 …/output/xinjing")
+        self.active_project.currentTextChanged.connect(self._project_changed)
+        self.metadata_sections: dict[str, QCheckBox] = {}
+        for section in ("基本信息", "数据范围", "处理参数", "文件与版本", "其他信息"):
+            checkbox = QCheckBox(section)
+            checkbox.setChecked(section in settings.metadata_visible_sections)
+            self.metadata_sections[section] = checkbox
+
+        form = QFormLayout()
+        form.addRow("Server Host", self.host)
+        form.addRow("SSH Port", self.port)
+        form.addRow("Username", self.username)
+        form.addRow("PlotDas Project Path", self.project_path)
+        form.addRow("PlotDas CLI", self.cli_command)
+        form.addRow("SSH Key", self.key_path)
+        form.addRow("Password", self.password)
+        group = QGroupBox("服务器连接")
+        group.setLayout(form)
+
+        behavior_form = QFormLayout()
+        behavior_form.addRow("连接超时", self.connect_timeout)
+        behavior_form.addRow("Keepalive", self.keepalive_interval)
+        behavior_form.addRow("自动重连次数", self.reconnect_attempts)
+        behavior_form.addRow("后台传输并发", self.max_background_transfers)
+        behavior_form.addRow("前后缓存 K", self.prefetch_count)
+        behavior_form.addRow("队列显示", self.show_transfer_queue)
+        behavior_form.addRow("当前项目", self.active_project)
+        behavior_form.addRow("图片数据源", self.data_source)
+        metadata_row = QHBoxLayout()
+        for checkbox in self.metadata_sections.values():
+            metadata_row.addWidget(checkbox)
+        behavior_form.addRow("详情展示内容", metadata_row)
+        behavior_group = QGroupBox("传输与图片浏览")
+        behavior_group.setLayout(behavior_form)
+
+        self.save_button = QPushButton("保存设置")
+        self.save_button.clicked.connect(self._save)
+        self.test_button = QPushButton("测试连接")
+        self.test_button.clicked.connect(self._test)
+        self.export_button = QPushButton("一键导出收藏")
+        self.export_button.clicked.connect(self._export_favorites)
+        self.status = QLabel("尚未测试")
+        actions = QHBoxLayout()
+        actions.addWidget(self.save_button)
+        actions.addWidget(self.test_button)
+        actions.addWidget(self.export_button)
+        actions.addWidget(self.status, 1)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(title)
+        layout.addWidget(group)
+        layout.addWidget(behavior_group)
+        layout.addLayout(actions)
+        layout.addStretch()
+
+    def current_settings(self) -> AppSettings:
+        return AppSettings(
+            server_host=self.host.text().strip(),
+            ssh_port=self.port.value(),
+            username=self.username.text().strip(),
+            project_path=self.project_path.text().strip(),
+            cli_command=self.cli_command.text().strip(),
+            private_key_path=self.key_path.text().strip(),
+            connect_timeout=self.connect_timeout.value(),
+            keepalive_interval=self.keepalive_interval.value(),
+            reconnect_attempts=self.reconnect_attempts.value(),
+            max_background_transfers=self.max_background_transfers.value(),
+            prefetch_count=self.prefetch_count.value(),
+            show_transfer_queue=self.show_transfer_queue.isChecked(),
+            active_project=self.active_project.currentText(),
+            data_source=self.data_source.text().strip(),
+            metadata_visible_sections=[
+                name for name, checkbox in self.metadata_sections.items() if checkbox.isChecked()
+            ],
+        )
+
+    def _export_favorites(self) -> None:
+        destination = QFileDialog.getExistingDirectory(self, "选择收藏导出目录")
+        if not destination:
+            return
+        files = self.annotations.export_favorites(Path(destination))
+        self.status.setText(f"已导出 {len(files)} 个收藏分组文件")
+        self.status.setStyleSheet("color: #16803c")
+
+    def set_projects(self, projects: list[Project]) -> None:
+        current = self.active_project.currentText()
+        self.projects = {project.name: project for project in projects}
+        self.active_project.blockSignals(True)
+        self.active_project.clear()
+        self.active_project.addItems(self.projects)
+        if current in self.projects:
+            self.active_project.setCurrentText(current)
+        elif projects:
+            self.active_project.setCurrentText(projects[0].name)
+            self.data_source.setText(projects[0].server_output)
+        self.active_project.blockSignals(False)
+
+    def _project_changed(self, name: str) -> None:
+        project = self.projects.get(name)
+        if project is not None:
+            self.data_source.setText(project.server_output)
+
+    def _save(self) -> None:
+        settings = self.current_settings()
+        self.store.save(settings)
+        self.settings_saved.emit(settings)
+        self.status.setText("设置已保存")
+        self.status.setStyleSheet("color: #16803c")
+
+    def _test(self) -> None:
+        settings = self.current_settings()
+        password = self.password.text()
+        self.store.save(settings)
+        self.settings_saved.emit(settings)
+        self.test_button.setEnabled(False)
+        self.status.setText("正在连接…")
+        worker = Worker(lambda: self.connection_test(settings, password))
+        worker.signals.succeeded.connect(self._connected)
+        worker.signals.failed.connect(self._failed)
+        worker.signals.finished.connect(lambda: self.test_button.setEnabled(True))
+        self.pool.start(worker)
+
+    def _connected(self, report: ConnectionReport) -> None:
+        self.status.setText("服务器连接成功 · PlotDas 目录存在 · CLI 可用")
+        self.status.setStyleSheet("color: #16803c")
+        self.connection_changed.emit(True)
+
+    def _failed(self, message: str, details: str) -> None:
+        self.status.setText(message)
+        self.status.setStyleSheet("color: #b42318")
+        self.connection_changed.emit(False)
+        show_error(self, message, details)
