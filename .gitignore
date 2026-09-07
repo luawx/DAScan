@@ -7,7 +7,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
-cache/
+/cache/
 logs/
 data/*.json
 config/settings.json

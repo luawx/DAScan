@@ -33,3 +33,10 @@ def test_transfer_options_are_persisted(tmp_path):
     assert settings.show_transfer_queue is True
     assert settings.active_project == "alpha"
     assert settings.data_source == "/output/alpha"
+
+
+def test_cache_limit_defaults_to_one_gb_and_is_persisted(tmp_path):
+    store = SettingsStore(tmp_path)
+    assert store.load().cache_limit_gb == 1.0
+    store.save(AppSettings(cache_limit_gb=2.5))
+    assert store.load().cache_limit_gb == 2.5

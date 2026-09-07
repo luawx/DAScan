@@ -19,6 +19,7 @@ class AppSettings:
     max_background_transfers: int = 2
     prefetch_count: int = field(default=3, compare=False)
     show_transfer_queue: bool = field(default=False, compare=False)
+    cache_limit_gb: float = field(default=1.0, compare=False)
     active_project: str = field(default="xinjing", compare=False)
     data_source: str = field(default="/cluster/datapool2/xuxy/1.Code/PlotDas/output/xinjing", compare=False)
     metadata_visible_sections: list[str] = field(

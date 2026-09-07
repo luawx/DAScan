@@ -59,6 +59,8 @@ class ImageService:
                     is_cached=True,
                 )
             )
+        local_image.touch(exist_ok=True)
+        self.cache.enforce_limit(project, (local_image, local_metadata))
         return ImageRecord(project, remote_image, remote_metadata, local_image, metadata)
 
     def fetch_index_record(
@@ -86,6 +88,8 @@ class ImageService:
         )
         if local_image.exists() and unchanged:
             LOGGER.debug("Image cache hit without network access: %s", local_image)
+            local_image.touch(exist_ok=True)
+            self.cache.enforce_limit(project, (local_image, local_metadata))
             if progress_callback:
                 size = local_image.stat().st_size
                 progress_callback(
@@ -106,4 +110,6 @@ class ImageService:
         self.cache.write_metadata(local_metadata, metadata)
         LOGGER.info("Downloading indexed image %s", remote_image)
         self.transport.download_file(remote_image, local_image, progress_callback, cancel_token)
+        local_image.touch(exist_ok=True)
+        self.cache.enforce_limit(project, (local_image, local_metadata))
         return ImageRecord(project, remote_image, remote_metadata, local_image, metadata)

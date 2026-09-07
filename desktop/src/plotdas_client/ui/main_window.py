@@ -42,6 +42,9 @@ class MainWindow(QMainWindow):
         self.project_service = ProjectService(app_root / "config" / "projects.yaml")
         projects = self.project_service.list_projects()
         client_settings = self.settings_store.load()
+        self.cache_manager = CacheManager(
+            app_root / "cache", int(client_settings.cache_limit_gb * 1024**3)
+        )
 
         annotations = AnnotationService(app_root / "data" / "annotations.json")
         self.setWindowTitle("DAScan")
@@ -51,7 +54,13 @@ class MainWindow(QMainWindow):
         self.navigation.setObjectName("navigation")
         self.stack = QStackedWidget()
 
-        self.settings_page = SettingsPage(self.settings_store, self._test_connection, projects, annotations)
+        self.settings_page = SettingsPage(
+            self.settings_store,
+            self._test_connection,
+            projects,
+            annotations,
+            self.cache_manager,
+        )
         self.project_page = ProjectPage(self.project_service)
         self.plot_page = PlotPage(projects, self._preview, self.settings_page.password.text)
         self.plot_page.set_projects(projects, client_settings.active_project)
@@ -131,7 +140,7 @@ class MainWindow(QMainWindow):
                 request.dpi,
             )
             remote = PlotDasRemoteClient(transport, settings)
-            images = ImageService(transport, CacheManager(self.app_root / "cache"))
+            images = ImageService(transport, self.cache_manager)
             result = PlotService(remote, images).preview(request)
             transport.invalidate(f"{settings.project_path}/output")
             LOGGER.info("Preview cached at %s", result.local_image_path)
@@ -168,6 +177,9 @@ class MainWindow(QMainWindow):
             self._session_password = ""
 
     def _settings_saved(self, settings: AppSettings) -> None:
+        self.cache_manager.set_limit_gb(settings.cache_limit_gb)
+        for project in self.project_service.list_projects():
+            self.cache_manager.enforce_limit(project.name)
         self.image_page.apply_settings(settings)
         self.plot_page.set_projects(self.project_service.list_projects(), settings.active_project)
         if self._session_settings is not None and self._session_settings != settings:
@@ -211,7 +223,7 @@ class MainWindow(QMainWindow):
         cancel_token: CancellationToken,
     ):
         transport = self._session(password)
-        images = ImageService(transport, CacheManager(self.app_root / "cache"))
+        images = ImageService(transport, self.cache_manager)
         return images.fetch_index_record(
             project.name,
             project.server_output,

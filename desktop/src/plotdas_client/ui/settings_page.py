@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, QThreadPool, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGridLayout,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from plotdas_client.cache import CacheManager
 from plotdas_client.config import AppSettings, SettingsStore
 from plotdas_client.models import Project
 from plotdas_client.services import AnnotationService, ConnectionReport
@@ -38,6 +40,7 @@ class SettingsPage(QWidget):
         connection_test: Callable[[AppSettings, str], ConnectionReport],
         projects: list[Project],
         annotations: AnnotationService,
+        cache_manager: CacheManager,
         parent=None,
     ):
         super().__init__(parent)
@@ -45,6 +48,7 @@ class SettingsPage(QWidget):
         self.connection_test = connection_test
         self.projects = {project.name: project for project in projects}
         self.annotations = annotations
+        self.cache_manager = cache_manager
         self.pool = QThreadPool.globalInstance()
         settings = store.load()
 
@@ -83,6 +87,12 @@ class SettingsPage(QWidget):
         self.prefetch_count.setSuffix(" 张")
         self.show_transfer_queue = QCheckBox("进入图片页时显示传输队列")
         self.show_transfer_queue.setChecked(settings.show_transfer_queue)
+        self.cache_limit_gb = QDoubleSpinBox()
+        self.cache_limit_gb.setRange(0.1, 1000.0)
+        self.cache_limit_gb.setDecimals(1)
+        self.cache_limit_gb.setSingleStep(0.5)
+        self.cache_limit_gb.setSuffix(" GB / 项目")
+        self.cache_limit_gb.setValue(settings.cache_limit_gb)
         self.active_project = QComboBox()
         self.active_project.addItems(self.projects)
         self.active_project.setCurrentText(settings.active_project)
@@ -106,10 +116,14 @@ class SettingsPage(QWidget):
         group = QGroupBox("服务器连接")
         group.setLayout(form)
 
+        connection_form = QFormLayout()
+        connection_form.addRow("连接超时", self.connect_timeout)
+        connection_form.addRow("Keepalive", self.keepalive_interval)
+        connection_form.addRow("自动重连次数", self.reconnect_attempts)
+        connection_group = QGroupBox("连接策略")
+        connection_group.setLayout(connection_form)
+
         behavior_form = QFormLayout()
-        behavior_form.addRow("连接超时", self.connect_timeout)
-        behavior_form.addRow("Keepalive", self.keepalive_interval)
-        behavior_form.addRow("自动重连次数", self.reconnect_attempts)
         behavior_form.addRow("后台传输并发", self.max_background_transfers)
         behavior_form.addRow("前后缓存 K", self.prefetch_count)
         behavior_form.addRow("队列显示", self.show_transfer_queue)
@@ -133,23 +147,42 @@ class SettingsPage(QWidget):
         behavior_group = QGroupBox("传输与图片浏览")
         behavior_group.setLayout(behavior_form)
 
+        self.clear_cache_button = QPushButton("一键清空全部缓存")
+        self.clear_cache_button.clicked.connect(self._clear_cache)
+        self.export_button = QPushButton("一键导出收藏")
+        self.export_button.clicked.connect(self._export_favorites)
+        storage_form = QFormLayout()
+        storage_form.addRow("磁盘缓存上限", self.cache_limit_gb)
+        storage_actions = QHBoxLayout()
+        storage_actions.addWidget(self.clear_cache_button)
+        storage_actions.addWidget(self.export_button)
+        storage_actions.addStretch()
+        storage_form.addRow("缓存与收藏", storage_actions)
+        storage_group = QGroupBox("本地存储")
+        storage_group.setLayout(storage_form)
+
         self.save_button = QPushButton("保存设置")
         self.save_button.clicked.connect(self._save)
         self.test_button = QPushButton("测试连接")
         self.test_button.clicked.connect(self._test)
-        self.export_button = QPushButton("一键导出收藏")
-        self.export_button.clicked.connect(self._export_favorites)
         self.status = QLabel("尚未测试")
         actions = QHBoxLayout()
         actions.addWidget(self.save_button)
         actions.addWidget(self.test_button)
-        actions.addWidget(self.export_button)
         actions.addWidget(self.status, 1)
 
         layout = QVBoxLayout(self)
         layout.addWidget(title)
-        layout.addWidget(group)
-        layout.addWidget(behavior_group)
+        settings_grid = QGridLayout()
+        settings_grid.setHorizontalSpacing(12)
+        settings_grid.setVerticalSpacing(10)
+        settings_grid.addWidget(group, 0, 0)
+        settings_grid.addWidget(connection_group, 0, 1)
+        settings_grid.addWidget(behavior_group, 1, 0)
+        settings_grid.addWidget(storage_group, 1, 1)
+        settings_grid.setColumnStretch(0, 3)
+        settings_grid.setColumnStretch(1, 2)
+        layout.addLayout(settings_grid)
         layout.addLayout(actions)
         layout.addStretch()
 
@@ -167,6 +200,7 @@ class SettingsPage(QWidget):
             max_background_transfers=self.max_background_transfers.value(),
             prefetch_count=self.prefetch_count.value(),
             show_transfer_queue=self.show_transfer_queue.isChecked(),
+            cache_limit_gb=self.cache_limit_gb.value(),
             active_project=self.active_project.currentText(),
             data_source=self.data_source.text().strip(),
             metadata_visible_sections=[
@@ -180,6 +214,11 @@ class SettingsPage(QWidget):
             return
         files = self.annotations.export_favorites(Path(destination))
         self.status.setText(f"已导出 {len(files)} 个收藏分组文件")
+        self.status.setStyleSheet("color: #16803c")
+
+    def _clear_cache(self) -> None:
+        removed = self.cache_manager.clear()
+        self.status.setText(f"已清空本地缓存，共删除 {removed} 个文件")
         self.status.setStyleSheet("color: #16803c")
 
     def set_projects(self, projects: list[Project]) -> None:
