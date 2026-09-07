@@ -601,14 +601,27 @@ class ImagePage(QWidget):
         if entry.project not in self.projects:
             show_error(self, f"历史记录所属项目已不存在: {entry.project}")
             return
-        self.only_favorites.setChecked(False)
         self._pending_history = entry
+        # Do not let removing the favorites filter rebuild the *current* date
+        # and consume the pending target before navigation has reached its date.
+        self.only_favorites.blockSignals(True)
+        self.only_favorites.setChecked(False)
+        self.only_favorites.blockSignals(False)
         if self.project.currentText() != entry.project:
             self.project.setCurrentText(entry.project)
         elif entry.date and any(self.dates.item(i).text() == entry.date for i in range(self.dates.count())):
-            self.dates.setCurrentRow(
-                next(i for i in range(self.dates.count()) if self.dates.item(i).text() == entry.date)
+            target_date_row = next(
+                i for i in range(self.dates.count()) if self.dates.item(i).text() == entry.date
             )
+            if self.dates.currentRow() == target_date_row:
+                # setCurrentRow does not emit when the date is already selected.
+                # Rebuild from the current complete index so _display_records can
+                # select the pending image path deterministically.
+                self._apply_record_filter()
+            else:
+                self.dates.setCurrentRow(target_date_row)
+        elif not entry.date:
+            self._apply_record_filter()
         else:
             self.refresh_dates(force_refresh=False)
 
