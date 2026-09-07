@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 
 class _GraphicsView(QGraphicsView):
-    MIN_SCALE = 0.5
+    MIN_SCALE = 0.3
     MAX_SCALE = 8.0
 
     def __init__(self, parent=None):
