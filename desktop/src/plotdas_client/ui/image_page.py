@@ -163,6 +163,13 @@ class ImagePage(QWidget):
         metadata_layout.setContentsMargins(0, 0, 0, 0)
         metadata_layout.addWidget(QLabel("图片信息"))
         metadata_layout.addWidget(self.metadata, 3)
+        metadata_layout.addWidget(QLabel("完整值（点击上方字段查看）"))
+        self.metadata_value = QPlainTextEdit()
+        self.metadata_value.setReadOnly(True)
+        self.metadata_value.setPlaceholderText("选择详情字段后在此显示完整内容")
+        self.metadata_value.setMaximumHeight(90)
+        self.metadata.currentItemChanged.connect(self._show_metadata_value)
+        metadata_layout.addWidget(self.metadata_value)
         self.favorite_button = QPushButton("☆ 收藏")
         self.favorite_button.setCheckable(True)
         self.favorite_button.setEnabled(False)
@@ -186,8 +193,8 @@ class ImagePage(QWidget):
         metadata_layout.addWidget(self.note)
         metadata_layout.addWidget(self.tags)
         metadata_layout.addWidget(self.save_note_button)
-        self.metadata_panel.setMinimumWidth(280)
-        self.metadata_panel.setMaximumWidth(420)
+        self.metadata_panel.setMinimumWidth(360)
+        self.metadata_panel.setMaximumWidth(600)
 
         browser_panel = QWidget()
         browser_layout = QVBoxLayout(browser_panel)
@@ -459,6 +466,9 @@ class ImagePage(QWidget):
         self.metadata.set_metadata(record.metadata)
         self.status.setText(f"{row + 1}/{len(self.records)} · 本地缓存：{record.local_image_path}")
         self._schedule_prefetch(row)
+
+    def _show_metadata_value(self, current, _previous=None) -> None:
+        self.metadata_value.setPlainText(current.text(1) if current is not None else "")
 
     def _prefetch_rows(self, center: int) -> list[int]:
         rows = []

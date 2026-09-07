@@ -1,3 +1,5 @@
+from PySide6.QtCore import Qt
+
 from plotdas_client.ui.metadata_widget import MetadataWidget
 
 
@@ -64,3 +66,22 @@ def test_metadata_sections_can_be_selected(qtbot):
     assert ("项目", "xinjing") in text
     assert ("采样率", "500 Hz") not in text
     assert ("Custom", "value") not in text
+
+
+def test_long_values_are_not_elided_and_receive_wrapped_height(qtbot):
+    widget = MetadataWidget()
+    qtbot.addWidget(widget)
+    long_path = "/cluster/datapool4/liaoxl/" + "very-long-directory/" * 8 + "data.h5"
+    widget.resize(360, 400)
+    widget.set_metadata({"source_file": long_path})
+    widget.show()
+    qtbot.waitExposed(widget)
+
+    section = widget.topLevelItem(0)
+    item = section.child(0)
+    index = widget.indexFromItem(item, 1)
+    hint = widget.sizeHintForIndex(index)
+
+    assert widget.textElideMode() == Qt.TextElideMode.ElideNone
+    assert item.text(1) == long_path
+    assert hint.height() > widget.fontMetrics().height()

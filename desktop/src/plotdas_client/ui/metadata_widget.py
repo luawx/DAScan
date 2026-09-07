@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem
+from PySide6.QtWidgets import QHeaderView, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem
 
 FIELD_LABELS = {
     "job_id": "任务 ID",
@@ -137,6 +137,25 @@ SECTIONS = (
 )
 
 
+class _WrappedValueDelegate(QStyledItemDelegate):
+    """Give wrapped value cells enough height instead of showing an ellipsis."""
+
+    def sizeHint(self, option, index) -> QSize:
+        size = super().sizeHint(option, index)
+        if index.column() != 1 or not index.data():
+            return size
+        width = max(80, option.rect.width() - 12)
+        bounds = option.fontMetrics.boundingRect(
+            0,
+            0,
+            width,
+            10000,
+            int(Qt.TextFlag.TextWrapAnywhere),
+            str(index.data()),
+        )
+        return QSize(size.width(), max(size.height(), bounds.height() + 8))
+
+
 class MetadataWidget(QTreeWidget):
     """Present sidecar metadata as grouped, localized fields instead of raw JSON."""
 
@@ -148,6 +167,8 @@ class MetadataWidget(QTreeWidget):
         self.setRootIsDecorated(True)
         self.setUniformRowHeights(False)
         self.setWordWrap(True)
+        self.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.setItemDelegateForColumn(1, _WrappedValueDelegate(self))
         self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.setToolTip("完整路径可将鼠标停留在对应值上查看")
@@ -189,6 +210,7 @@ class MetadataWidget(QTreeWidget):
             parent = basic_sections[0] if basic_sections else self._section("基本信息")
             parent.addChild(QTreeWidgetItem(["持续时间", self._format_duration(duration)]))
         self.expandAll()
+        self.doItemsLayout()
 
     def _section(self, title: str) -> QTreeWidgetItem:
         item = QTreeWidgetItem([title, ""])
