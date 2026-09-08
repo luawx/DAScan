@@ -362,7 +362,7 @@ class ImagePage(QWidget):
         self._display_records(records)
 
     def _display_records(self, records: list[dict]) -> None:
-        for task_id in self.task_context:
+        for task_id in list(self.task_context):
             self.transfer_queue.cancel(task_id)
         self.task_context.clear()
         self.row_tasks.clear()
@@ -434,12 +434,18 @@ class ImagePage(QWidget):
             return
         existing_task = self.row_tasks.get(row)
         if existing_task:
-            if foreground:
-                self.transfer_queue.promote(existing_task)
+            if foreground and self.transfer_queue.promote(existing_task):
                 self.current_task_id = existing_task
                 self.cancel_button.setEnabled(True)
                 self._set_busy("正在提升预取任务…")
-            return
+                return
+            if not foreground:
+                return
+            # The queue no longer owns this id (usually a cancelled prefetch
+            # whose queued signal arrived later). Remove the stale mapping and
+            # submit a real foreground task instead of spinning forever.
+            self.row_tasks.pop(row, None)
+            self.task_context.pop(existing_task, None)
         record = self.records[row]
         password = self.password_provider()
         remote_name = PurePosixPath(str(record.get("image_path", f"image-{row}"))).name
@@ -465,7 +471,6 @@ class ImagePage(QWidget):
         self.viewer.load_image(record.local_image_path)
         self.metadata.set_metadata(record.metadata)
         self.status.setText(f"{row + 1}/{len(self.records)} · 本地缓存：{record.local_image_path}")
-        self._schedule_prefetch(row)
 
     def _show_metadata_value(self, current, _previous=None) -> None:
         self.metadata_value.setPlainText(current.text(1) if current is not None else "")
@@ -635,19 +640,20 @@ class ImagePage(QWidget):
 
     def _on_task_updated(self, event: TransferEvent) -> None:
         self._update_queue_row(event)
-        if event.foreground and event.state in {"queued", "transferring"}:
-            self.current_task_id = event.task_id
-            self.cancel_button.setEnabled(True)
-        if event.task_id != self.current_task_id:
-            return
         if event.state == "cancelled":
-            context = self.task_context.get(event.task_id)
-            if context and context[0] == self.generation:
-                self.row_tasks.pop(context[1], None)
+            self._release_task(event.task_id)
+            if event.task_id != self.current_task_id:
+                return
+            self.current_task_id = None
             self.progress.setRange(0, 100)
             self.progress.setValue(0)
             self.progress_detail.setText("已取消")
             self.cancel_button.setEnabled(False)
+            return
+        if event.foreground and event.state in {"queued", "transferring"}:
+            self.current_task_id = event.task_id
+            self.cancel_button.setEnabled(True)
+        if event.task_id != self.current_task_id:
             return
         progress = event.progress
         if progress is None:
@@ -666,7 +672,7 @@ class ImagePage(QWidget):
 
     def _on_task_completed(self, event: TransferEvent) -> None:
         self._update_queue_row(event)
-        context = self.task_context.get(event.task_id)
+        context = self._release_task(event.task_id)
         if context is None:
             return
         generation, row = context
@@ -678,17 +684,23 @@ class ImagePage(QWidget):
             self._show_image(row, event.result)
             cached = bool(event.progress and event.progress.is_cached)
             self._set_complete("本地缓存" if cached else "下载完成")
+            self.current_task_id = None
             self.cancel_button.setEnabled(False)
 
     def _on_task_failed(self, event: TransferEvent) -> None:
         self._update_queue_row(event)
-        context = self.task_context.get(event.task_id)
-        if context and context[0] == self.generation:
-            self.row_tasks.pop(context[1], None)
+        context = self._release_task(event.task_id)
         if context and context == (self.generation, self.images.currentRow()):
+            self.current_task_id = None
             self._failed(event.error, event.details)
         else:
             LOGGER.warning("Image prefetch failed: %s", event.error)
+
+    def _release_task(self, task_id: str) -> tuple[int, int] | None:
+        context = self.task_context.pop(task_id, None)
+        if context is not None and self.row_tasks.get(context[1]) == task_id:
+            self.row_tasks.pop(context[1], None)
+        return context
 
     def _update_queue_row(self, event: TransferEvent) -> None:
         row = self.task_rows.get(event.task_id)
@@ -756,7 +768,7 @@ class ImagePage(QWidget):
         self.transfer_queue.close()
 
     def cancel_all_transfers(self) -> None:
-        for task_id in self.task_context:
+        for task_id in list(self.task_context):
             self.transfer_queue.cancel(task_id)
 
     def _set_focus_mode(self, enabled: bool) -> None:

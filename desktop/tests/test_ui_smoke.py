@@ -34,6 +34,14 @@ def test_main_window_starts(qtbot, tmp_path: Path):
     )
     assert window.image_page.progress.value() == 50
     assert "KiB/s" in window.image_page.progress_detail.text()
+    window.image_page.current_task_id = None
+    window.image_page.task_context["prefetch"] = (window.image_page.generation, 1)
+    window.image_page.row_tasks[1] = "prefetch"
+    window.image_page._on_task_updated(
+        TransferEvent("prefetch", "key-2", "prefetch.png", False, "cancelled")
+    )
+    assert "prefetch" not in window.image_page.task_context
+    assert 1 not in window.image_page.row_tasks
     assert window.image_page.queue_table.isHidden()
     window.image_page.records = [{"image_path": str(index)} for index in range(5)]
     window.settings_page.prefetch_count.setValue(2)
