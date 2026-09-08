@@ -58,7 +58,11 @@ class CacheManager:
             return 0
         protected_paths = {path.resolve() for path in protected}
         with self._lock:
-            files = [path for path in project_root.rglob("*") if path.is_file()]
+            files = [
+                path
+                for path in project_root.rglob("*")
+                if path.is_file() and not self._is_temporary(path)
+            ]
             total = sum(path.stat().st_size for path in files)
             removed = 0
             for path in sorted(files, key=lambda item: item.stat().st_mtime_ns):
@@ -79,11 +83,17 @@ class CacheManager:
         if not target.exists():
             return 0
         with self._lock:
-            files = [path for path in target.rglob("*") if path.is_file()]
+            files = [
+                path for path in target.rglob("*") if path.is_file() and not self._is_temporary(path)
+            ]
             for path in files:
                 path.unlink(missing_ok=True)
             self._remove_empty_directories(target)
             return len(files)
+
+    @staticmethod
+    def _is_temporary(path: Path) -> bool:
+        return path.suffix.lower() in {".part", ".tmp"}
 
     @staticmethod
     def _remove_empty_directories(root: Path) -> None:

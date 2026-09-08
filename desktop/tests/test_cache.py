@@ -39,3 +39,17 @@ def test_clear_cache_removes_files(tmp_path):
     assert cache.clear() == 2
     assert not image.exists()
     assert not metadata.exists()
+
+
+def test_cache_cleanup_never_removes_active_download_files(tmp_path):
+    cache = CacheManager(tmp_path, max_bytes_per_project=1)
+    image, _ = cache.paths_for("alpha", "/output/20230308/a.png")
+    partial = image.with_suffix(image.suffix + ".part")
+    partial.parent.mkdir(parents=True, exist_ok=True)
+    partial.write_bytes(b"active download")
+
+    cache.enforce_limit("alpha")
+    removed = cache.clear()
+
+    assert removed == 0
+    assert partial.exists()

@@ -41,3 +41,29 @@ def test_favorite_on_current_date_selects_exact_image(qtbot, tmp_path: Path):
     assert page.images.currentRow() == 1
     assert page.records[page.images.currentRow()]["image_path"].endswith("b.png")
     page.close_transfers()
+
+
+def test_prefetch_submits_only_one_background_task_at_a_time(qtbot, tmp_path: Path):
+    project = Project("xinjing", "/input", "/output", "xinjing")
+    page = ImagePage(
+        [project],
+        lambda *_args: [],
+        lambda *_args: [],
+        lambda *_args: ImageRecord("xinjing", "/output/a.png"),
+        lambda: "",
+        AppSettings(active_project="xinjing", data_source="/output", prefetch_count=3),
+        AnnotationService(tmp_path / "annotations.json"),
+        HistoryService(tmp_path / "history.json"),
+    )
+    qtbot.addWidget(page)
+    page.records = [{"image_path": f"/output/{index}.png"} for index in range(10)]
+    submitted = []
+    page._start_fetch = lambda row, foreground: submitted.append((row, foreground))
+
+    page._schedule_prefetch(5)
+
+    assert submitted == [(6, False)]
+    page.task_context["active"] = (page.generation, 6)
+    page._schedule_prefetch(5)
+    assert submitted == [(6, False)]
+    page.close_transfers()

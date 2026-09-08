@@ -81,6 +81,7 @@ class ImagePage(QWidget):
         self.records: list[dict] = []
         self._all_records: list[dict] = []
         self.loaded_records: dict[int, ImageRecord] = {}
+        self.failed_prefetch_rows: set[int] = set()
         self.task_context: dict[str, tuple[int, int]] = {}
         self.row_tasks: dict[int, str] = {}
         self.task_rows: dict[str, int] = {}
@@ -369,6 +370,7 @@ class ImagePage(QWidget):
         self.generation += 1
         self.records = records
         self.loaded_records.clear()
+        self.failed_prefetch_rows.clear()
         self.current_task_id = None
         self.images.blockSignals(True)
         self.images.clear()
@@ -421,9 +423,10 @@ class ImagePage(QWidget):
         if row in self.loaded_records:
             self.current_task_id = None
             self._show_image(row, self.loaded_records[row])
+            self._schedule_prefetch(row)
             return
+        self.failed_prefetch_rows.discard(row)
         self._start_fetch(row, foreground=True)
-        self._schedule_prefetch(row)
 
     def _start_fetch(self, row: int, foreground: bool) -> None:
         project = self._current_project()
@@ -487,8 +490,17 @@ class ImagePage(QWidget):
         return rows
 
     def _schedule_prefetch(self, center: int) -> None:
+        # Keep prefetch gentle: wait for the foreground image and submit only
+        # one background transfer at a time. Completion schedules the next one.
+        if self.current_task_id is not None:
+            return
+        if any(row != center for _generation, row in self.task_context.values()):
+            return
         for row in self._prefetch_rows(center):
+            if row in self.loaded_records or row in self.row_tasks or row in self.failed_prefetch_rows:
+                continue
             self._start_fetch(row, foreground=False)
+            break
 
     def _cancel_outside_prefetch_window(self, center: int) -> None:
         lower = max(0, center - self._prefetch_count)
@@ -686,6 +698,7 @@ class ImagePage(QWidget):
             self._set_complete("本地缓存" if cached else "下载完成")
             self.current_task_id = None
             self.cancel_button.setEnabled(False)
+        self._schedule_prefetch(self.images.currentRow())
 
     def _on_task_failed(self, event: TransferEvent) -> None:
         self._update_queue_row(event)
@@ -695,6 +708,9 @@ class ImagePage(QWidget):
             self._failed(event.error, event.details)
         else:
             LOGGER.warning("Image prefetch failed: %s", event.error)
+            if context:
+                self.failed_prefetch_rows.add(context[1])
+            self._schedule_prefetch(self.images.currentRow())
 
     def _release_task(self, task_id: str) -> tuple[int, int] | None:
         context = self.task_context.pop(task_id, None)

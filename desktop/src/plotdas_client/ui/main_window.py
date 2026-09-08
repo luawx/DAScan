@@ -60,6 +60,7 @@ class MainWindow(QMainWindow):
             projects,
             annotations,
             self.cache_manager,
+            self._clear_image_cache,
         )
         self.project_page = ProjectPage(self.project_service)
         self.plot_page = PlotPage(projects, self._preview, self.settings_page.password.text)
@@ -231,6 +232,11 @@ class MainWindow(QMainWindow):
             progress_callback,
             cancel_token,
         )
+
+    def _clear_image_cache(self) -> int:
+        if hasattr(self, "image_page"):
+            self.image_page.cancel_all_transfers()
+        return self.cache_manager.clear()
 
     def closeEvent(self, event) -> None:
         self.image_page.close_transfers()

@@ -41,6 +41,7 @@ class SettingsPage(QWidget):
         projects: list[Project],
         annotations: AnnotationService,
         cache_manager: CacheManager,
+        clear_cache_action: Callable[[], int],
         parent=None,
     ):
         super().__init__(parent)
@@ -49,6 +50,7 @@ class SettingsPage(QWidget):
         self.projects = {project.name: project for project in projects}
         self.annotations = annotations
         self.cache_manager = cache_manager
+        self.clear_cache_action = clear_cache_action
         self.pool = QThreadPool.globalInstance()
         settings = store.load()
 
@@ -217,7 +219,7 @@ class SettingsPage(QWidget):
         self.status.setStyleSheet("color: #16803c")
 
     def _clear_cache(self) -> None:
-        removed = self.cache_manager.clear()
+        removed = self.clear_cache_action()
         self.status.setText(f"已清空本地缓存，共删除 {removed} 个文件")
         self.status.setStyleSheet("color: #16803c")
 
