@@ -18,7 +18,7 @@ def test_fit_to_window_never_scales_below_30_percent(qtbot):
     assert viewer.view.transform().m11() == pytest.approx(0.3)
 
 
-def test_fit_to_window_can_be_undone(qtbot):
+def test_clicking_fit_to_window_again_restores_previous_view(qtbot):
     viewer = ImageViewerWidget()
     qtbot.addWidget(viewer)
     viewer.resize(640, 480)
@@ -30,16 +30,14 @@ def test_fit_to_window_can_be_undone(qtbot):
 
     viewer.fit_to_window()
 
-    assert viewer.undo_button.isEnabled()
     assert viewer.view.transform().m11() != pytest.approx(0.75)
 
-    viewer.undo_view_change()
+    viewer.fit_to_window()
 
     assert viewer.view.transform().m11() == pytest.approx(0.75)
-    assert not viewer.undo_button.isEnabled()
 
 
-def test_actual_size_and_fit_to_window_can_be_undone_in_order(qtbot):
+def test_clicking_actual_size_again_restores_previous_view(qtbot):
     viewer = ImageViewerWidget()
     qtbot.addWidget(viewer)
     viewer.resize(640, 480)
@@ -49,11 +47,26 @@ def test_actual_size_and_fit_to_window_can_be_undone_in_order(qtbot):
     viewer.view.scale(0.75, 0.75)
 
     viewer.actual_size()
-    viewer.fit_to_window()
-    viewer.undo_view_change()
 
     assert viewer.view.transform().m11() == pytest.approx(1.0)
 
-    viewer.undo_view_change()
+    viewer.actual_size()
 
     assert viewer.view.transform().m11() == pytest.approx(0.75)
+
+
+def test_switching_view_actions_uses_the_current_view_as_restore_point(qtbot):
+    viewer = ImageViewerWidget()
+    qtbot.addWidget(viewer)
+    viewer.resize(640, 480)
+    viewer.pixmap_item.setPixmap(QPixmap(2000, 2000))
+    viewer.scene.setSceneRect(viewer.pixmap_item.boundingRect())
+    viewer._has_image = True
+    viewer.view.scale(0.75, 0.75)
+
+    viewer.fit_to_window()
+    fitted_scale = viewer.view.transform().m11()
+    viewer.actual_size()
+    viewer.actual_size()
+
+    assert viewer.view.transform().m11() == pytest.approx(fitted_scale)

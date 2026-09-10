@@ -4,7 +4,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QKeySequence, QMouseEvent, QPixmap, QShortcut, QTransform, QWheelEvent
+from PySide6.QtGui import QMouseEvent, QPixmap, QTransform, QWheelEvent
 from PySide6.QtWidgets import (
     QGraphicsPixmapItem,
     QGraphicsScene,
@@ -53,7 +53,8 @@ class ImageViewerWidget(QWidget):
         self.scene.addItem(self.pixmap_item)
         self._has_image = False
         self._pixmap_cache: OrderedDict[Path, QPixmap] = OrderedDict()
-        self._view_undo_stack: list[tuple[QTransform, int, int]] = []
+        self._previous_view_state: tuple[QTransform, int, int] | None = None
+        self._active_view_action: str | None = None
 
         previous = QPushButton("← 上一张")
         previous.setToolTip("键盘方向键 ←")
@@ -65,20 +66,12 @@ class ImageViewerWidget(QWidget):
         fit.clicked.connect(self.fit_to_window)
         actual = QPushButton("100%")
         actual.clicked.connect(self.actual_size)
-        self.undo_button = QPushButton("撤回视图")
-        self.undo_button.setToolTip("撤回上一次适应窗口或 100% 操作 (Ctrl+Z)")
-        self.undo_button.setEnabled(False)
-        self.undo_button.clicked.connect(self.undo_view_change)
-        self.undo_shortcut = QShortcut(QKeySequence.StandardKey.Undo, self)
-        self.undo_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        self.undo_shortcut.activated.connect(self.undo_view_change)
         toolbar = QHBoxLayout()
         toolbar.addWidget(previous)
         toolbar.addWidget(next_button)
         toolbar.addStretch()
         toolbar.addWidget(fit)
         toolbar.addWidget(actual)
-        toolbar.addWidget(self.undo_button)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(toolbar)
@@ -97,14 +90,15 @@ class ImageViewerWidget(QWidget):
         self.pixmap_item.setPixmap(pixmap)
         self.scene.setSceneRect(self.pixmap_item.boundingRect())
         self._has_image = True
-        self._view_undo_stack.clear()
+        self._previous_view_state = None
+        self._active_view_action = None
         self._fit_to_window()
-        self.undo_button.setEnabled(False)
 
     def fit_to_window(self) -> None:
         if not self._has_image:
             return
-        self._remember_view_state()
+        if self._toggle_view_action("fit"):
+            return
         self._fit_to_window()
 
     def _fit_to_window(self) -> None:
@@ -118,23 +112,24 @@ class ImageViewerWidget(QWidget):
     def actual_size(self) -> None:
         if not self._has_image:
             return
-        self._remember_view_state()
+        if self._toggle_view_action("actual"):
+            return
         self.view.resetTransform()
 
-    def _remember_view_state(self) -> None:
-        state = (
+    def _toggle_view_action(self, action: str) -> bool:
+        if self._active_view_action == action and self._previous_view_state is not None:
+            transform, horizontal, vertical = self._previous_view_state
+            self.view.setTransform(transform)
+            self.view.horizontalScrollBar().setValue(horizontal)
+            self.view.verticalScrollBar().setValue(vertical)
+            self._previous_view_state = None
+            self._active_view_action = None
+            return True
+
+        self._previous_view_state = (
             QTransform(self.view.transform()),
             self.view.horizontalScrollBar().value(),
             self.view.verticalScrollBar().value(),
         )
-        self._view_undo_stack.append(state)
-        self.undo_button.setEnabled(True)
-
-    def undo_view_change(self) -> None:
-        if not self._view_undo_stack:
-            return
-        transform, horizontal, vertical = self._view_undo_stack.pop()
-        self.view.setTransform(transform)
-        self.view.horizontalScrollBar().setValue(horizontal)
-        self.view.verticalScrollBar().setValue(vertical)
-        self.undo_button.setEnabled(bool(self._view_undo_stack))
+        self._active_view_action = action
+        return False
