@@ -15,6 +15,7 @@ def test_main_window_starts(qtbot, tmp_path: Path):
     assert window.windowTitle() == "DAScan"
     assert window.navigation.currentItem().text() == "图片"
     assert window.stack.count() == 5
+    assert window.image_page.progress.isHidden()
     window.image_page.focus_button.setChecked(True)
     assert window.navigation.isHidden()
     assert window.image_page.browser_panel.isHidden()
@@ -33,7 +34,15 @@ def test_main_window_starts(qtbot, tmp_path: Path):
         )
     )
     assert window.image_page.progress.value() == 50
+    assert not window.image_page.progress.isHidden()
     assert "KiB/s" in window.image_page.progress_detail.text()
+    window.image_page._set_complete("下载完成")
+    assert window.image_page.progress.value() == 100
+    assert window.image_page.progress.isHidden()
+    assert window.image_page.progress_detail.isHidden()
+    assert window.image_page.cancel_button.isHidden()
+    window.image_page._set_busy("正在下载…")
+    assert not window.image_page.progress.isHidden()
     window.image_page.current_task_id = None
     window.image_page.task_context["prefetch"] = (window.image_page.generation, 1)
     window.image_page.row_tasks[1] = "prefetch"

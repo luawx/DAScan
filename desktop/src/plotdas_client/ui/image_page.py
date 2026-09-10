@@ -224,6 +224,8 @@ class ImagePage(QWidget):
         self.cancel_button = QPushButton("取消")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self._cancel_current)
+        self._progress_widgets = (self.progress, self.progress_detail, self.cancel_button)
+        self._set_progress_visible(False)
         self.queue_button = QPushButton("传输队列")
         self.queue_button.setCheckable(True)
         self.queue_button.setChecked(settings.show_transfer_queue)
@@ -648,6 +650,7 @@ class ImagePage(QWidget):
         self.progress.setValue(0)
         self.progress_detail.setText("失败")
         self.cancel_button.setEnabled(False)
+        self._set_progress_visible(False)
         show_error(self, message, details)
 
     def _on_task_updated(self, event: TransferEvent) -> None:
@@ -661,12 +664,14 @@ class ImagePage(QWidget):
             self.progress.setValue(0)
             self.progress_detail.setText("已取消")
             self.cancel_button.setEnabled(False)
+            self._set_progress_visible(False)
             return
         if event.foreground and event.state in {"queued", "transferring"}:
             self.current_task_id = event.task_id
             self.cancel_button.setEnabled(True)
         if event.task_id != self.current_task_id:
             return
+        self._set_progress_visible(True)
         progress = event.progress
         if progress is None:
             self._set_busy("正在下载…" if event.state == "transferring" else "正在排队…")
@@ -763,6 +768,7 @@ class ImagePage(QWidget):
         self.queue_table.setVisible(visible)
 
     def _set_busy(self, text: str) -> None:
+        self._set_progress_visible(True)
         self.progress.setRange(0, 0)
         self.progress_detail.setText(text)
 
@@ -770,6 +776,11 @@ class ImagePage(QWidget):
         self.progress.setRange(0, 100)
         self.progress.setValue(100)
         self.progress_detail.setText(text)
+        self._set_progress_visible(False)
+
+    def _set_progress_visible(self, visible: bool) -> None:
+        for widget in self._progress_widgets:
+            widget.setVisible(visible)
 
     @staticmethod
     def _format_bytes(value: float) -> str:
